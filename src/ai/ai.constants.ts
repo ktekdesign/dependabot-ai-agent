@@ -1,0 +1,1 @@
+export const AI_PROVIDER_CONFIG = Symbol('AI_PROVIDER_CONFIG');

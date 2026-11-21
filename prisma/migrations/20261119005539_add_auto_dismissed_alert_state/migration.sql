@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "AlertState" ADD VALUE 'AUTO_DISMISSED';

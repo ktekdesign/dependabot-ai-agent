@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model Repository {
+  id               String           @id @default(uuid()) @db.Uuid
+  githubId         BigInt           @unique
+  owner            String
+  name             String
+  fullName         String           @unique
+  monitoringStatus MonitoringStatus @default(PENDING)
+  lastSyncedAt     DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  alerts SecurityAlert[]
+
+  @@map("repositories")
+}
+
+model SecurityAlert {
+  id                String             @id @default(uuid()) @db.Uuid
+  repositoryId      String             @db.Uuid
+  alertNumber       Int
+  packageName       String
+  ecosystem         String
+  severity          String?
+  cveId             String?
+  vulnerableVersion String?
+  patchedVersion    String?
+  manifestPath      String?
+  state             AlertState         @default(OPEN)
+  firstDetectedAt   DateTime?
+  lastUpdatedAt     DateTime?
+  analyses          SecurityAnalysis[]
+
+  isPresent  Boolean   @default(true)
+  lastSeenAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, alertNumber])
+  @@index([state, severity])
+  @@index([repositoryId, isPresent])
+  @@map("security_alerts")
+}
+
+enum MonitoringStatus {
+  PENDING
+  ENABLED
+  NOT_ENABLED
+  ERROR
+}
+
+enum AlertState {
+  OPEN
+  DISMISSED
+  FIXED
+  AUTO_DISMISSED
+}
+
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+}
+
+enum AnalysisStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+model OutboxEvent {
+  id          String            @id @default(uuid()) @db.Uuid
+  eventType   String
+  aggregateId String            @db.Uuid
+  dedupeKey   String            @unique
+  payload     Json
+  status      OutboxStatus      @default(PENDING)
+  attempts    Int               @default(0)
+  availableAt DateTime          @default(now())
+  publishedAt DateTime?
+  lastError   String?
+  lockToken   String?
+  analysis    SecurityAnalysis?
+  lockedUntil DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([status, availableAt])
+  @@index([status, lockedUntil])
+  @@index([aggregateId])
+  @@map("outbox_events")
+}
+
+model SecurityAnalysis {
+  id              String @id @default(uuid()) @db.Uuid
+  outboxEventId   String @unique @db.Uuid
+  securityAlertId String @db.Uuid
+
+  status AnalysisStatus @default(PENDING)
+
+  alertSnapshot Json
+  result        Json?
+
+  attempts  Int     @default(0)
+  lastError String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  processingToken      String?
+  processingLeaseUntil DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  outboxEvent   OutboxEvent   @relation(fields: [outboxEventId], references: [id], onDelete: Cascade)
+  securityAlert SecurityAlert @relation(fields: [securityAlertId], references: [id], onDelete: Cascade)
+
+  @@index([securityAlertId, createdAt])
+  @@index([status, updatedAt])
+  @@index([status, processingLeaseUntil])
+  @@map("security_analyses")
+}
